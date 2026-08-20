@@ -6,6 +6,7 @@
  *  タスクの優先度の定義(min = 5)
  */
 
+#define LUMP_SEND_PRIORITY 5
 #define LUMP_RECEIVE_PRIORITY 5
 #define LUMP_DISPATCH_PRIORITY 7
 #define LUMP_CAMERA_CALIB_PRIORITY 8
@@ -18,6 +19,7 @@
  *  関数のプロトタイプ宣言
  */
 
+extern void lump_send_task(intptr_t exinf);
 extern void receive_command(intptr_t exinf);
 extern void lump_dispatch_poll(intptr_t exinf);
 extern void lump_camera_calib(intptr_t exinf);
