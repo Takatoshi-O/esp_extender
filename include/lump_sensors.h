@@ -3,7 +3,8 @@
 //Color ID
 typedef enum {
     LUMP_COLOR_ERROR = -1,
-    LUMP_COLOR_BLACK = 0,
+    LUMP_COLOR_UNKNOWN = 0,
+    LUMP_COLOR_BLACK,
     LUMP_COLOR_WHITE,
     LUMP_COLOR_RED,
     LUMP_COLOR_GREEN,
@@ -18,7 +19,6 @@ typedef enum {
     LUMP_COLOR_PINK,
     LUMP_COLOR_LIME,
     LUMP_COLOR_NAVY,
-    LUMP_COLOR_UNKNOWN,
 } lump_color_id_t;
 
 #define LUMP_MAX_INSTANCES_PER_TYPE 16

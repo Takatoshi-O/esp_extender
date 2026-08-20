@@ -66,7 +66,7 @@ lump_color_id_t lump_color_get_color(uint8_t instanceID)
 {
     lump_color_id_t colorID;
     send_command(esp32_dev, SENSOR_COLOR, COLOR_MODE_COLOR_ID, instanceID, 0, 0, 0, 0);
-    for (int i = 0; i < 200; i++)
+    for (int i = 0; i < 50; i++)
     {
         if (color_sensor_values[instanceID].isnew)
         {
@@ -74,8 +74,9 @@ lump_color_id_t lump_color_get_color(uint8_t instanceID)
             colorID = color_sensor_values[instanceID].color_id;
             return colorID;
         }
-        dly_tsk(10000);
+        dly_tsk(5000);
     }
+    
     colorID = LUMP_COLOR_ERROR;
     return colorID;
 }
@@ -84,7 +85,7 @@ lump_color_rgbc_t lump_color_get_rgbc(uint8_t instanceID)
 {
     lump_color_rgbc_t rgbc;
     send_command(esp32_dev, SENSOR_COLOR, COLOR_MODE_RGBC, instanceID, 0, 0, 0, 0);
-    for (int i = 0; i < 200; i++)
+    for (int i = 0; i < 50; i++)
     {
         if (color_sensor_values[instanceID].isnew)
         {
@@ -95,7 +96,7 @@ lump_color_rgbc_t lump_color_get_rgbc(uint8_t instanceID)
             rgbc.c = color_sensor_values[instanceID].c;
             return rgbc;
         }
-        dly_tsk(10000);
+        dly_tsk(5000);
     }
 
     rgbc.r = -1; rgbc.g = -1; rgbc.b = -1; rgbc.c = -1;
@@ -104,9 +105,7 @@ lump_color_rgbc_t lump_color_get_rgbc(uint8_t instanceID)
 
 lump_color_id_t lump_color_get_notify_color(uint8_t instanceID)
 {
-    lump_color_id_t colorID;
-    colorID = color_sensor_notify_values[instanceID];
-    return colorID;
+    return (lump_color_id_t)color_sensor_notify_values[instanceID];
 }
 
 void lump_color_request_calib(uint8_t instanceID, lump_color_id_t colorID)

@@ -15,7 +15,8 @@ void lump_command_dispatch_register(lump_sensor_type_t type, lump_command_handle
     s_handlers[type] = handler;
 }
 
-void lump_dispatch_poll(intptr_t exinf) {
+void lump_dispatch_poll(intptr_t exinf) 
+{
     lump_command_entry_t entry;
     while (true) 
     {

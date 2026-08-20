@@ -13,6 +13,8 @@ typedef struct {
     int16_t v1, v2, v3, v4;
 } lump_command_entry_t;
 
+void lump_command_init(void);
+
 bool lump_command_pop(lump_command_entry_t *out);
 
-void lump_command_push(const uint8_t raw[LUMP_PAYLOAD_LEN]);
+void lump_command_push(const int32_t raw[LUMP_PAYLOAD_LEN]);

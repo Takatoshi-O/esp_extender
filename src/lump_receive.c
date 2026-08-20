@@ -22,11 +22,11 @@ void lump_command_init(void) {
     s_count = 0;
 }
 
-void lump_command_push(const uint8_t raw[LUMP_PAYLOAD_LEN]) {
+void lump_command_push(const int32_t raw[LUMP_PAYLOAD_LEN]) {
     lump_command_entry_t entry;
-    entry.type        = (lump_sensor_type_t)((raw[0] >> 5) & 0x07);
-    entry.command      = raw[0] & 0x1F;
-    entry.seq          = raw[1]; /* コマンド用パケットはbyte1=シーケンス番号 */
+    entry.seq          = raw[0]; /* コマンド用パケットはbyte0=シーケンス番号 */
+    entry.type         = (lump_sensor_type_t)((raw[1] >> 5) & 0x07);
+    entry.command      = raw[1] & 0x1F;
     entry.instance_id  = raw[2]; /* コマンド用パケットはbyte2=インスタンスID */
 
     uint8_t lo, hi;
@@ -74,9 +74,8 @@ size_t lump_command_count(void) {
 
 void receive_command(intptr_t exinf)
 {
-    uint8_t raw[LUMP_PAYLOAD_LEN];
+    int32_t raw[LUMP_PAYLOAD_LEN];
     pbio_error_t err = pup_device_get_values(esp32_dev, ESP32_MODE, (int32_t*)raw);
-
     if (err == PBIO_SUCCESS) {
         if (raw[0] != ACK_MESSAGE)
         {
