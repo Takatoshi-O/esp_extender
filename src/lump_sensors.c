@@ -8,14 +8,10 @@
 
 #include "lump_color.h"
 
-void lump_sensors_init()
-{
-    lump_color_init();
-}
-
 char lump_color_id_to_char(lump_color_id_t color)
 {
-    switch (color) {
+    switch (color) 
+    {
     case LUMP_COLOR_ERROR:
         return 'E';
 

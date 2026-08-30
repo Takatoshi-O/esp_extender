@@ -28,12 +28,6 @@ typedef struct
 } camera_12pos_value_t;
 static camera_12pos_value_t camera_12pos_values[LUMP_MAX_INSTANCES_PER_TYPE]; 
 
-void lump_camera_sta_calib()
-{
-    act_tsk(LUMP_CHANGE_CAM_CALIB_MODE_TSK);
-    act_tsk(LUMP_CAMERA_CALIB_TSK);
-}
-
 static void lump_camera(lump_command_entry_t data);
 
 void lump_camera_init()
@@ -41,6 +35,11 @@ void lump_camera_init()
     memset(camera_sensor_values, 0, sizeof(camera_sensor_values));
     memset(camera_12pos_values, 0, sizeof(camera_12pos_values));
     lump_command_dispatch_register(SENSOR_CAMERA, lump_camera);
+}
+
+void lump_camera_setup(uint8_t instanceID)
+{
+    send_command(esp32_dev, SENSOR_CAMERA, CAMERA_MODE_SYSTEM, instanceID, 0, 1, 0, 0);
 }
 
 
@@ -72,7 +71,7 @@ static void lump_camera(lump_command_entry_t data)
     case CAMERA_MODE_12POS_COLOR:
         camera_12pos_values[data.instance_id].datalist = data.v1;
         int16_t raw_data[3];
-        raw_data[0] = data.v2; raw_data[1] = data.v3; raw_data[1] = data.v4;
+        raw_data[0] = data.v2; raw_data[1] = data.v3; raw_data[2] = data.v4;
         unpack_12pos_color(raw_data, (uint8_t *)camera_12pos_values[data.instance_id].color_ids);
         camera_12pos_values[data.instance_id].isnew = true;
         break;
@@ -81,11 +80,11 @@ static void lump_camera(lump_command_entry_t data)
     }
 }
 
-lump_color_id_t lump_camera_color(uint8_t instanceID, int16_t x, int16_t y, uint8_t px_size)
+lump_color_id_t lump_camera_get_color(uint8_t instanceID, int16_t x, int16_t y, uint8_t radius)
 {
     lump_color_id_t colorID;
-    send_command(esp32_dev, SENSOR_CAMERA, CAMERA_MODE_POS_COLOR, instanceID, x, y, (int16_t)px_size, 0);
-    for (int i = 0; i < 200; i++)
+    send_command(esp32_dev, SENSOR_CAMERA, CAMERA_MODE_POS_COLOR, instanceID, x, y, (int16_t)radius, 0);
+    for (int i = 0; i < 50; i++)
     {
         if (camera_sensor_values[instanceID].isnew)
         {
@@ -93,7 +92,7 @@ lump_color_id_t lump_camera_color(uint8_t instanceID, int16_t x, int16_t y, uint
             colorID = camera_sensor_values[instanceID].color_id;
             return colorID;
         }
-        dly_tsk(10000);
+        dly_tsk(5000);
     }
     colorID = LUMP_COLOR_ERROR;
     return colorID;
@@ -103,7 +102,7 @@ lump_camera_yuv_t lump_camera_get_yuv(uint8_t instanceID, int16_t x, int16_t y)
 {
     lump_camera_yuv_t yuv;
     send_command(esp32_dev, SENSOR_CAMERA, CAMERA_MODE_POS_COLOR, instanceID, x, y, 1, 0);
-    for (int i = 0; i < 200; i++)
+    for (int i = 0; i < 50; i++)
     {
         if (camera_sensor_values[instanceID].isnew)
         {
@@ -113,7 +112,7 @@ lump_camera_yuv_t lump_camera_get_yuv(uint8_t instanceID, int16_t x, int16_t y)
             yuv.v = camera_sensor_values[instanceID].v;
             return yuv;
         }
-        dly_tsk(10000);
+        dly_tsk(5000);
     }
 
     yuv.y = -1; yuv.u = -1; yuv.v = -1;
@@ -121,20 +120,23 @@ lump_camera_yuv_t lump_camera_get_yuv(uint8_t instanceID, int16_t x, int16_t y)
 }
 
 
-bool lump_camera_get_12pos_color(lump_color_id_t color_ids[12], uint8_t instanceID, uint8_t use_datalist, uint8_t px_size)
+bool lump_camera_get_12pos_color(lump_color_id_t color_ids[12], uint8_t instanceID, uint8_t use_datalist, uint8_t radius)
 {
-    send_command(esp32_dev, SENSOR_CAMERA, CAMERA_MODE_12POS_COLOR, instanceID, (int16_t)use_datalist, (int16_t)px_size, 0, 0);
-    for (int i = 0; i < 200; i++)
+    send_command(esp32_dev, SENSOR_CAMERA, CAMERA_MODE_12POS_COLOR, instanceID, (int16_t)use_datalist, (int16_t)radius, 0, 0);
+    for (int i = 0; i < 50; i++)
     {
         if (camera_12pos_values[instanceID].isnew)
         {
+            camera_12pos_values[instanceID].isnew = false;
+            
             for (int i = 0; i < 12; i++)
             {
                 color_ids[i] = camera_12pos_values[instanceID].color_ids[i];
             }
+            
             return true;
         }
-        dly_tsk(10000);
+        dly_tsk(5000);
     }
     
     return false;

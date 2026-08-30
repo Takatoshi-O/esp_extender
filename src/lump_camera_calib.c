@@ -14,27 +14,22 @@
 #include "lump_comm_tsk.h"
 #include "lump_sensors.h"
 
+#include "lump_calib.h"
+#include "header/lump_button_input.h"
+
 #include "kernel_cfg.h"
 #include "syssvc/serial.h"
 
+typedef enum {
+    CAMERA_SYS_MODE_SYSTEM      = 0,
+    CAMERA_SYS_MODE_NOT_CALIB   = 1,
+    CAMERA_SYS_MODE_COLOR_CALIB = 2,
+    CAMERA_SYS_MODE_POS_CALIB   = 3,
+} camera_sys_mode_t;
+
 #define POS_NUM_MAX 12
 
-
-static hub_button_t pressed;
-static uint8_t pos_list = 0;
-static uint8_t pos;
-static bool ischange_calib_mode = false;
 static uint8_t instanceID = 0;
-static lump_color_id_t calib_color;
-
-typedef enum
-{
-    NOT_CALIB,
-    COLOR_CALIB,
-    POS_CALIB,
-    CALIB_MODE_MAX,
-} calib_mode_t;
-static calib_mode_t calib_mode;
 
 typedef enum
 {
@@ -43,7 +38,6 @@ typedef enum
     POS_MOVE_POS,
     POS_CALIB_MODE_MAX,
 } pos_calib_mode_t;
-static pos_calib_mode_t pos_calib_mode;
 
 typedef enum
 {
@@ -52,14 +46,18 @@ typedef enum
     COLOR_SELECT_COLOR,
     COLOR_CALIB_MODE_MAX,
 } color_calib_mode_t;
-static color_calib_mode_t color_calib_mode;
 
 typedef enum
 {
     HORIZONTAL = 1,
     VERTICAL = -1,
 } direction_t;
-direction_t direction;
+
+static uint8_t pos;
+static uint8_t pos_list;
+static direction_t direction;
+static lump_color_id_t calib_color;
+
 
 static uint16_t pack_list_and_pos(uint8_t list, uint8_t pos)
 {
@@ -67,24 +65,6 @@ static uint16_t pack_list_and_pos(uint8_t list, uint8_t pos)
 
     out = ((uint16_t)list<< 8) | ((uint16_t)pos);
     return out;
-}
-
-static void display_calib_mode(calib_mode_t mode)
-{
-    switch (mode)
-    {
-    case NOT_CALIB:
-        hub_display_char('N');
-        break;
-    case COLOR_CALIB:
-        hub_display_char('C');
-        break;
-    case POS_CALIB:
-        hub_display_char('P');
-        break;
-    default:
-        break;
-    }
 }
 
 static void display_pos_calib_mode(pos_calib_mode_t mode)
@@ -136,308 +116,256 @@ static void display_color_calib_mode(color_calib_mode_t mode)
     }
 }
 
-static void change_calib_mode()
+
+void cam_color_calib(intptr_t exinf)
 {
-    display_calib_mode(calib_mode);
+    lump_button_status_t status[LUMP_BTN_MAX];
+    lump_button_edge_state_t bt_state = {0};
+    color_calib_mode_t color_calib_mode = COLOR_SELECT_POSNUM;
+    calib_color = LUMP_COLOR_BLACK;
+    pos = 0;
+    pos_list = 0;
+
+    send_command(esp32_dev, SENSOR_CAMERA, CAMERA_MODE_SYSTEM, 
+                 instanceID, CAMERA_SYS_MODE_COLOR_CALIB, 
+                 (int16_t)pack_list_and_pos(pos_list, pos), calib_color, 0);
+    hub_display_char('I');
+    dly_tsk(500*1000);
+    hub_display_number(instanceID);
+    
     while (true)
     {
-        while (true)
-        {
-            hub_button_is_pressed(&pressed);
-            if(pressed != 0) break;
-            dly_tsk(50*1000);
-        }
-        if (pressed & HUB_BUTTON_CENTER) break;
-        if (pressed & HUB_BUTTON_RIGHT)
-        {
-            calib_mode = (calib_mode + 1) % CALIB_MODE_MAX;
-            display_calib_mode(calib_mode);
-        }
-        if (pressed & HUB_BUTTON_LEFT)
-        {
-            if (calib_mode > 0) calib_mode = (calib_mode - 1) % CALIB_MODE_MAX;
-            else calib_mode = CALIB_MODE_MAX - 1;
-            display_calib_mode(calib_mode);
-        }
-        dly_tsk(200*1000);
-    }
-    if (calib_mode == COLOR_CALIB || calib_mode == POS_CALIB)
-    {
-        hub_display_char('I');
-        dly_tsk(500*1000);
-        hub_display_number(instanceID);
-        while (true)
-        {
-            while (true)
-            {
-                hub_button_is_pressed(&pressed);
-                if(pressed != 0) break;
-                dly_tsk(50*1000);
-            }
-            if (pressed & HUB_BUTTON_CENTER) break;
-            if (pressed & HUB_BUTTON_RIGHT)
-            {
-                instanceID = (instanceID + 1) % 255;
-                hub_display_number(instanceID);
-            }
-            if (pressed & HUB_BUTTON_LEFT)
-            {
-                if (instanceID > 0) instanceID = (instanceID-1) % 255;
-                hub_display_number(instanceID);
-            }
-            dly_tsk(200*1000);
-        }
-        pos_calib_mode = POS_SELECT_POSNUM;
-        color_calib_mode = COLOR_SELECT_POSNUM;
-        calib_color = LUMP_COLOR_BLACK;
-        direction = HORIZONTAL;
-        pos = 0;
+        lump_button_query_status(status);
+        if (status[LUMP_BTN_CENTER].pressed) break;
 
-        if (calib_mode == COLOR_CALIB) 
+        if (status[LUMP_BTN_RIGHT].pressed) 
         {
+            if (instanceID + 1 < LUMP_MAX_INSTANCES_PER_TYPE) instanceID ++;
+            else instanceID = 0;
+            hub_display_number(instanceID);
+            lump_button_wait_release(LUMP_BTN_RIGHT);
+        }
+
+        if (status[LUMP_BTN_LEFT].pressed)
+        {
+            if (instanceID > 0) instanceID --;
+            else instanceID = LUMP_MAX_INSTANCES_PER_TYPE - 1;
+            hub_display_number(instanceID);
+            lump_button_wait_release(LUMP_BTN_LEFT);
+        }
+
+        dly_tsk(50*1000);
+    }
+    
+    send_command(esp32_dev, SENSOR_CAMERA, CAMERA_MODE_SYSTEM, 
+                 instanceID, CAMERA_SYS_MODE_COLOR_CALIB, 
+                 (int16_t)pack_list_and_pos(pos_list, pos), calib_color, 0);
+    display_color_calib_mode(color_calib_mode);
+
+    while (!is_change_calib_mode())
+    {
+        bool is_pressed = lump_button_query_status(status);
+
+        lump_button_event_t bt_event;
+        if (lump_button_detect_edge(status, LUMP_BTN_BT, &bt_state, &bt_event) &&
+            bt_event.kind == LUMP_PRESS_SHORT)
+        {
+            color_calib_mode = (color_calib_mode + 1) % COLOR_CALIB_MODE_MAX;
             display_color_calib_mode(color_calib_mode);
-            pos_list = 0;
-        }
-        if (calib_mode == POS_CALIB) 
-        {
-            display_pos_calib_mode(pos_calib_mode);
-            pos_list = 1;
-        }
-    }
-}
-
-void lump_change_cam_calib_mode(intptr_t exinf)
-{
-    hub_button_t BTpressed;
-    hub_button_is_pressed(&BTpressed);
-
-    while (true)
-    {
-        while (!(BTpressed & HUB_BUTTON_BT))
-        {
-            dly_tsk(50*1000);
-            hub_button_is_pressed(&BTpressed);
-        }
-        ischange_calib_mode = true;
-        uint32_t pressed_start = pbio_control_get_time_ticks();
-        while (pbio_control_get_time_ticks() - pressed_start < pbio_control_time_ms_to_ticks(1000))
-        {
-            hub_button_is_pressed(&BTpressed);
-            if (!(BTpressed & HUB_BUTTON_BT)) break;
-            dly_tsk(50*1000);
         }
 
-        if (BTpressed & HUB_BUTTON_BT) 
+        if (status[LUMP_BTN_CENTER].pressed)
         {
-            change_calib_mode();
-            dly_tsk(300 * 1000);
-            if (calib_mode == POS_CALIB || calib_mode == COLOR_CALIB) hub_display_number(pos);
-            else hub_display_off();
+            send_command(esp32_dev, SENSOR_CAMERA, CAMERA_MODE_SYSTEM, 
+                         instanceID, CAMERA_SYS_MODE_COLOR_CALIB, 
+                         (int16_t)pack_list_and_pos(pos_list, pos), calib_color, 1);
+            lump_button_wait_release(LUMP_BTN_CENTER);
+
+            continue;
         }
-        else
+
+        if (status[LUMP_BTN_RIGHT].pressed)
         {
-            if (calib_mode == POS_CALIB)
+            switch (color_calib_mode)
             {
-                pos_calib_mode = (pos_calib_mode + 1) % POS_CALIB_MODE_MAX;
-                display_pos_calib_mode(pos_calib_mode);
+            case COLOR_SELECT_POSLIST:
+                if (pos_list < 255) pos_list++;
+                hub_display_number(pos_list);
+                break;
+            case COLOR_SELECT_COLOR:
+                if (calib_color < 7) calib_color ++;
+                else calib_color = LUMP_COLOR_BLACK;
+                hub_display_char(lump_color_id_to_char(calib_color));
+                break;
+            case COLOR_SELECT_POSNUM:
+                pos = (pos+1) % POS_NUM_MAX;
+                hub_display_number(pos);
+            default:
+                break;
             }
-            if (calib_mode == COLOR_CALIB)
+            lump_button_wait_release(LUMP_BTN_RIGHT);
+        }
+        
+        if (status[LUMP_BTN_LEFT].pressed)
+        {
+            switch (color_calib_mode)
             {
-                color_calib_mode = (color_calib_mode + 1) % COLOR_CALIB_MODE_MAX;
-                display_color_calib_mode(color_calib_mode);
-            }
-        }
+            case COLOR_SELECT_POSLIST:
+                if (pos_list > 0) pos_list--;
+                hub_display_number(pos_list);
+                break;
+            case COLOR_SELECT_COLOR:
+                if (calib_color > 1) calib_color --;
+                else calib_color = LUMP_COLOR_ORANGE;
 
-        ischange_calib_mode = false;
-        while (BTpressed & HUB_BUTTON_BT)
-        {
-            dly_tsk(50*1000);
-            hub_button_is_pressed(&BTpressed);
-        }
-    }
-}
-
-static void color_calib()
-{
-    if (pressed & HUB_BUTTON_RIGHT)
-    {
-        switch (color_calib_mode)
-        {
-        case COLOR_SELECT_POSLIST:
-            if (pos_list < 255) pos_list++;
-            hub_display_number(pos_list);
-            break;
-        case COLOR_SELECT_COLOR:
-            calib_color = (calib_color + 1) % 8;
-            hub_display_char(lump_color_id_to_char(calib_color));
-            break;
-        case COLOR_SELECT_POSNUM:
-            pos = (pos+1) % POS_NUM_MAX;
-            hub_display_number(pos);
-        default:
-            break;
-        }
-        send_command(esp32_dev, SENSOR_CAMERA, CAMERA_MODE_SYSTEM, instanceID, LUMP_CAM_CALIB_COLOR, (int16_t)pack_list_and_pos(pos_list, pos), calib_color, 0);
-        dly_tsk(200*1000);
-    }
-    if (pressed & HUB_BUTTON_LEFT)
-    {
-        switch (color_calib_mode)
-        {
-        case COLOR_SELECT_POSLIST:
-            if (pos_list > 0) pos_list--;
-            hub_display_number(pos_list);
-            break;
-        case COLOR_SELECT_COLOR:
-            if (calib_color > 0) calib_color = (calib_color - 1) % 8;
-            else calib_color = LUMP_COLOR_PURPLE;
-            hub_display_char(lump_color_id_to_char(calib_color));
-            break;
-        case COLOR_SELECT_POSNUM:
-            if (pos > 0) pos = (pos-1) % POS_NUM_MAX;
-            else pos = POS_NUM_MAX - 1;
-            hub_display_number(pos);
-            break;
-        default:
-            break;
-        }
-        send_command(esp32_dev, SENSOR_CAMERA, CAMERA_MODE_SYSTEM, instanceID, LUMP_CAM_CALIB_COLOR, (int16_t)pack_list_and_pos(pos_list, pos), calib_color, 0);
-        dly_tsk(200*1000);
-    }
-    if (pressed & HUB_BUTTON_CENTER)
-    {
-        send_command(esp32_dev, SENSOR_CAMERA, CAMERA_MODE_SYSTEM, instanceID, LUMP_CAM_CALIB_COLOR, (int16_t)pack_list_and_pos(pos_list, pos), calib_color, 1);
-        while (pressed & HUB_BUTTON_CENTER)
-        {
-            hub_button_is_pressed(&pressed);
-            dly_tsk(50 * 1000);
-        }
-    }
-}
-
-static void pos_calib()
-{
-    uint32_t pressed_start = pbio_control_get_time_ticks();
-    if (pressed & HUB_BUTTON_RIGHT)
-    {
-        switch (pos_calib_mode)
-        {
-        case POS_SELECT_POSLIST:
-            if (pos_list < 255) pos_list++;
-            hub_display_number(pos_list);
-            send_command(esp32_dev, SENSOR_CAMERA, CAMERA_MODE_SYSTEM, instanceID, LUMP_CAM_CALIB_POS, 
-                        (int16_t)pack_list_and_pos(pos_list, pos), 0, 0);
-            dly_tsk(200*1000);
-            break;
-        case POS_SELECT_POSNUM:
-            pos = (pos+1) % POS_NUM_MAX;
-            hub_display_number(pos);
-            send_command(esp32_dev, SENSOR_CAMERA, CAMERA_MODE_SYSTEM, instanceID, LUMP_CAM_CALIB_POS, 
-                        (int16_t)pack_list_and_pos(pos_list, pos), 0, 0);
-            dly_tsk(200*1000);
-            break;
-        case POS_MOVE_POS:
-            while (pressed & HUB_BUTTON_RIGHT)
-            {
-                if ((pbio_control_get_time_ticks() - pressed_start) < pbio_control_time_ms_to_ticks(1200))
-                {
-                    send_command(esp32_dev, SENSOR_CAMERA, CAMERA_MODE_SYSTEM, instanceID, LUMP_CAM_CALIB_POS, 
-                        (int16_t)pack_list_and_pos(pos_list, pos), 1, direction);
-                }
-                else
-                {
-                    send_command(esp32_dev, SENSOR_CAMERA, CAMERA_MODE_SYSTEM, instanceID, LUMP_CAM_CALIB_POS, 
-                        (int16_t)pack_list_and_pos(pos_list, pos), 5, direction);
-                }
-                dly_tsk(200*1000);
-                hub_button_is_pressed(&pressed);
+                hub_display_char(lump_color_id_to_char(calib_color));
+                break;
+            case COLOR_SELECT_POSNUM:
+                if (pos > 0) pos = (pos-1) % POS_NUM_MAX;
+                else pos = POS_NUM_MAX - 1;
+                hub_display_number(pos);
+                break;
+            default:
+                break;
             }
-            break;
-        default:
-            break;
+            lump_button_wait_release(LUMP_BTN_LEFT);
         }
-    }
-    if (pressed & HUB_BUTTON_LEFT)
-    {
-        switch (pos_calib_mode)
+        
+        if (is_pressed)
         {
-        case POS_SELECT_POSLIST:
-            if (pos_list > 1) pos_list--;
-            hub_display_number(pos_list);
-            send_command(esp32_dev, SENSOR_CAMERA, CAMERA_MODE_SYSTEM, instanceID, LUMP_CAM_CALIB_POS, 
-                        (int16_t)pack_list_and_pos(pos_list, pos), 0, 0);
-            dly_tsk(200*1000);
-            break;
-        case POS_SELECT_POSNUM:
-            if (pos > 0) pos = (pos-1) % POS_NUM_MAX;
-            else pos = POS_NUM_MAX - 1;
-            hub_display_number(pos);
-            send_command(esp32_dev, SENSOR_CAMERA, CAMERA_MODE_SYSTEM, instanceID, LUMP_CAM_CALIB_POS, 
-                        (int16_t)pack_list_and_pos(pos_list, pos), 0, 0);
-            dly_tsk(200*1000);
-            break;
-        case POS_MOVE_POS:
-            while (pressed & HUB_BUTTON_LEFT)
-            {
-                if ((pbio_control_get_time_ticks() - pressed_start) < pbio_control_time_ms_to_ticks(1200))
-                {
-                    send_command(esp32_dev, SENSOR_CAMERA, CAMERA_MODE_SYSTEM, instanceID, LUMP_CAM_CALIB_POS, 
-                        (int16_t)pack_list_and_pos(pos_list, pos), -1, direction);
-                }
-                else
-                {
-                    send_command(esp32_dev, SENSOR_CAMERA, CAMERA_MODE_SYSTEM, instanceID, LUMP_CAM_CALIB_POS, 
-                        (int16_t)pack_list_and_pos(pos_list, pos), -5, direction);
-                }
-                dly_tsk(200*1000);
-                hub_button_is_pressed(&pressed);
-            }
-            break;
-        default:
-            break;
+            send_command(esp32_dev, SENSOR_CAMERA, CAMERA_MODE_SYSTEM, 
+                         instanceID, CAMERA_SYS_MODE_COLOR_CALIB, 
+                         (int16_t)pack_list_and_pos(pos_list, pos), calib_color, 0);
         }
-    }
-    if (pressed & HUB_BUTTON_CENTER)
-    {
-        if (pos_calib_mode == POS_MOVE_POS)
-        {
-            direction *= -1;
-            if (direction == HORIZONTAL) hub_display_char('H');
-            else hub_display_char('V');
-            dly_tsk(300*1000);
-            while (pressed & HUB_BUTTON_CENTER)
-            {
-                hub_button_is_pressed(&pressed);
-                dly_tsk(50 * 1000);
-            }
-        }
-    }
-}
-
-
-void lump_camera_calib(intptr_t exinf)
-{
-    while (true)
-    {
-        if (!ischange_calib_mode)
-        {
-            hub_button_is_pressed(&pressed);
-            if (pressed != 0)
-            {
-                switch (calib_mode)
-                {
-                case POS_CALIB:
-                    pos_calib();
-                    break;
-                case COLOR_CALIB:
-                    color_calib();
-                    break;
-                default:
-                    break;
-                }
-            }
-        }
+        
         dly_tsk(50*1000);
     }
 }
 
+
+void cam_pos_calib(intptr_t exinf)
+{
+    lump_button_status_t status[LUMP_BTN_MAX];
+    lump_button_edge_state_t bt_state = {0};
+    pos_calib_mode_t pos_calib_mode = POS_SELECT_POSNUM;
+    pos = 0;
+    pos_list = 1;
+    direction = HORIZONTAL;
+    int move_range = 0;
+
+    send_command(esp32_dev, SENSOR_CAMERA, CAMERA_MODE_SYSTEM, 
+                 instanceID, CAMERA_SYS_MODE_POS_CALIB, 
+                 (int16_t)pack_list_and_pos(pos_list, pos), 0, direction);
+    hub_display_char('I');
+    dly_tsk(500*1000);
+    hub_display_number(instanceID);
+    
+    while (true)
+    {
+        lump_button_query_status(status);
+        if (status[LUMP_BTN_CENTER].pressed) break;
+
+        if (status[LUMP_BTN_RIGHT].pressed) 
+        {
+            if (instanceID + 1 < LUMP_MAX_INSTANCES_PER_TYPE) instanceID ++;
+            else instanceID = 0;
+            hub_display_number(instanceID);
+            lump_button_wait_release(LUMP_BTN_RIGHT);
+        }
+
+        if (status[LUMP_BTN_LEFT].pressed)
+        {
+            if (instanceID > 0) instanceID --;
+            else instanceID = LUMP_MAX_INSTANCES_PER_TYPE - 1;
+            hub_display_number(instanceID);
+            lump_button_wait_release(LUMP_BTN_LEFT);
+        }
+        dly_tsk(50*1000);
+    }
+    
+    send_command(esp32_dev, SENSOR_CAMERA, CAMERA_MODE_SYSTEM, 
+                 instanceID, CAMERA_SYS_MODE_POS_CALIB, 
+                 (int16_t)pack_list_and_pos(pos_list, pos), 0, direction);
+    display_pos_calib_mode(pos_calib_mode);
+
+    while (!is_change_calib_mode())
+    {
+        bool is_pressed = lump_button_query_status(status);
+
+        lump_button_event_t bt_event;
+        if (lump_button_detect_edge(status, LUMP_BTN_BT, &bt_state, &bt_event) &&
+            bt_event.kind == LUMP_PRESS_SHORT)
+        {
+            pos_calib_mode = (pos_calib_mode + 1) % POS_CALIB_MODE_MAX;
+            display_pos_calib_mode(pos_calib_mode);
+        }
+
+        if (status[LUMP_BTN_CENTER].pressed && pos_calib_mode == POS_MOVE_POS)
+        {
+            direction *= -1;
+            if (direction == HORIZONTAL) hub_display_char('H');
+            else hub_display_char('V');
+
+            lump_button_wait_release(LUMP_BTN_CENTER);
+            continue;
+        }
+
+        move_range = 0;
+
+        if (status[LUMP_BTN_RIGHT].pressed)
+        {
+            switch (pos_calib_mode)
+            {
+            case POS_SELECT_POSLIST:
+                if (pos_list < 255) pos_list++;
+                hub_display_number(pos_list);
+                lump_button_wait_release(LUMP_BTN_RIGHT);
+                break;
+            case POS_SELECT_POSNUM:
+                pos = (pos+1) % POS_NUM_MAX;
+                hub_display_number(pos);
+                lump_button_wait_release(LUMP_BTN_RIGHT);
+                break;
+            case POS_MOVE_POS:
+                if (status[LUMP_BTN_RIGHT].held_ms < 1200) move_range = 1;
+                else move_range = 5;
+                break;
+            default:
+                break;
+            }
+        }
+        
+        if (status[LUMP_BTN_LEFT].pressed)
+        {
+            switch (pos_calib_mode)
+            {
+            case POS_SELECT_POSLIST:
+                if (pos_list > 1) pos_list--;
+                hub_display_number(pos_list);
+                lump_button_wait_release(LUMP_BTN_LEFT);
+                break;
+            case POS_SELECT_POSNUM:
+                if (pos > 0) pos = (pos-1) % POS_NUM_MAX;
+                else pos = POS_NUM_MAX - 1;
+                hub_display_number(pos);
+                lump_button_wait_release(LUMP_BTN_LEFT);
+                break;
+            case POS_MOVE_POS:
+                if (status[LUMP_BTN_LEFT].held_ms < 1200) move_range = -1;
+                else move_range = -5;
+                break;
+            default:
+                break;
+            }
+        }
+        
+        if (is_pressed)
+        {
+            send_command(esp32_dev, SENSOR_CAMERA, CAMERA_MODE_SYSTEM, 
+                         instanceID, CAMERA_SYS_MODE_POS_CALIB, 
+                         (int16_t)pack_list_and_pos(pos_list, pos), move_range, direction);
+        }
+        
+        dly_tsk(50*1000);
+    }
+}

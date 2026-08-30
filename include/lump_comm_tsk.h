@@ -22,5 +22,9 @@
 extern void lump_send_task(intptr_t exinf);
 extern void receive_command(intptr_t exinf);
 extern void lump_dispatch_poll(intptr_t exinf);
-extern void lump_camera_calib(intptr_t exinf);
-extern void lump_change_cam_calib_mode(intptr_t exinf);
+
+extern void lump_button_task(intptr_t exinf);
+extern void change_calib_mode(intptr_t exinf);
+extern void cam_pos_calib(intptr_t exinf);
+extern void cam_color_calib(intptr_t exinf);
+extern void color_sensor_color_calib(intptr_t exinf);

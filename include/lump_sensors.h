@@ -21,6 +21,6 @@ typedef enum {
     LUMP_COLOR_NAVY,
 } lump_color_id_t;
 
-#define LUMP_MAX_INSTANCES_PER_TYPE 16
+#define LUMP_MAX_INSTANCES_PER_TYPE 8
 
 char lump_color_id_to_char(lump_color_id_t color);
